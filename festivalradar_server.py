@@ -16,6 +16,10 @@ mcp = FastMCP("festivalradar", app=app, port=8000)
 def root():
     return {"status": "FestivalRadar online!"}
 
+@app.get("/mcp/healthz")
+def healthz():
+    return {"status": "ok"}
+
 @mcp.tool()
 def find_local_events(
     city: str,
@@ -49,14 +53,15 @@ def find_local_events(
         data = response.json()
         events = data.get("_embedded", {}).get("events", [])
         for event in events:
+            # Defensive serialization: every field is always a string
             results.append({
                 "source": "Ticketmaster",
-                "name": event.get("name"),
-                "date": event.get("dates", {}).get("start", {}).get("localDate"),
-                "venue": event.get("_embedded", {}).get("venues", [{}])[0].get("name"),
-                "url": event.get("url"),
-                "genre": ", ".join([c["name"] for c in event.get("classifications", []) if "name" in c]),
-                "description": event.get("info") or event.get("description") or "",
+                "name": str(event.get("name", "")),
+                "date": str(event.get("dates", {}).get("start", {}).get("localDate", "")),
+                "venue": str(event.get("_embedded", {}).get("venues", [{}])[0].get("name", "")),
+                "url": str(event.get("url", "")),
+                "genre": ", ".join([str(c.get("name", "")) for c in event.get("classifications", []) if "name" in c]),
+                "description": str(event.get("info") or event.get("description") or ""),
             })
     except Exception as e:
         results.append({"source": "Ticketmaster", "error": str(e)})
@@ -82,14 +87,15 @@ def find_local_events(
             eb_data = eb_response.json()
             eb_events = eb_data.get("events", [])
             for event in eb_events:
+                # Defensive serialization: every field is always a string
                 results.append({
                     "source": "Eventbrite",
-                    "name": event.get("name", {}).get("text"),
-                    "date": event.get("start", {}).get("local"),
-                    "venue": (event.get("venue", {}) or {}).get("name", "Unknown"),
-                    "url": event.get("url"),
-                    "genre": genre or "",
-                    "description": (event.get("description", {}) or {}).get("text", ""),
+                    "name": str(event.get("name", {}).get("text", "")),
+                    "date": str(event.get("start", {}).get("local", "")),
+                    "venue": str((event.get("venue", {}) or {}).get("name", "Unknown")),
+                    "url": str(event.get("url", "")),
+                    "genre": str(genre or ""),
+                    "description": str((event.get("description", {}) or {}).get("text", "")),
                 })
         except Exception as e:
             results.append({"source": "Eventbrite", "error": str(e)})
@@ -110,5 +116,6 @@ def test_events(
         end_date=end_date
     )
 
-if __name__ == "__main__":
-    mcp.run(transport="sse", host="0.0.0.0", port=8000)
+import os
+PORT = int(os.environ.get("PORT", 8000))
+mcp.run(transport="sse", host="0.0.0.0", port=PORT)
