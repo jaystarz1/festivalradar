@@ -10,7 +10,7 @@ TICKETMASTER_API_KEY = os.getenv("TICKETMASTER_API_KEY")
 EVENTBRITE_API_KEY = os.getenv("EVENTBRITE_API_KEY")
 
 app = FastAPI()
-mcp = FastMCP("festivalradar", app=app, port=8000)
+mcp = FastMCP("festivalradar", app=app)
 
 @app.get("/")
 def root():
