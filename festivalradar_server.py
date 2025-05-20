@@ -9,7 +9,6 @@ load_dotenv()
 TICKETMASTER_API_KEY = os.getenv("TICKETMASTER_API_KEY")
 EVENTBRITE_API_KEY = os.getenv("EVENTBRITE_API_KEY")
 
-# Create FastAPI app and MCP wrapper
 app = FastAPI()
 mcp = FastMCP("festivalradar", app=app, port=8000)
 
@@ -25,30 +24,31 @@ def find_local_events(
     end_date: str = None
 ):
     """
-    Find local events in a given city, filtered by genre and date range, from Ticketmaster and Eventbrite.
+    Find local events in a given city, filtered by genre and date range.
+    Aggregates from Ticketmaster and Eventbrite.
     """
     results = []
 
     # --- Ticketmaster ---
-    params = {
+    tm_params = {
         "apikey": TICKETMASTER_API_KEY,
         "city": city,
         "countryCode": "CA",
         "size": 10,
     }
     if genre:
-        params["classificationName"] = genre
+        tm_params["classificationName"] = genre
     if start_date:
-        params["startDateTime"] = f"{start_date}T00:00:00Z"
+        tm_params["startDateTime"] = f"{start_date}T00:00:00Z"
     if end_date:
-        params["endDateTime"] = f"{end_date}T23:59:59Z"
+        tm_params["endDateTime"] = f"{end_date}T23:59:59Z"
 
-    url_tm = "https://app.ticketmaster.com/discovery/v2/events.json"
     try:
-        response_tm = httpx.get(url_tm, params=params, timeout=10)
-        data_tm = response_tm.json()
-        events_tm = data_tm.get("_embedded", {}).get("events", [])
-        for event in events_tm:
+        tm_url = "https://app.ticketmaster.com/discovery/v2/events.json"
+        response = httpx.get(tm_url, params=tm_params, timeout=10)
+        data = response.json()
+        events = data.get("_embedded", {}).get("events", [])
+        for event in events:
             results.append({
                 "source": "Ticketmaster",
                 "name": event.get("name"),
@@ -61,61 +61,38 @@ def find_local_events(
         results.append({"source": "Ticketmaster", "error": str(e)})
 
     # --- Eventbrite ---
-    headers_eb = {"Authorization": f"Bearer {EVENTBRITE_API_KEY}"}
-    params_eb = {
-        "location.address": city,
-        "expand": "venue",
-        "sort_by": "date",
-        "page_size": 10,
-    }
-    if genre:
-        params_eb["q"] = genre
-    if start_date:
-        params_eb["start_date.range_start"] = f"{start_date}T00:00:00Z"
-    if end_date:
-        params_eb["start_date.range_end"] = f"{end_date}T23:59:59Z"
+    if EVENTBRITE_API_KEY:
+        eb_params = {
+            "location.address": city,
+            "expand": "venue",
+            "page_size": 10,
+        }
+        if start_date:
+            eb_params["start_date.range_start"] = f"{start_date}T00:00:00Z"
+        if end_date:
+            eb_params["start_date.range_end"] = f"{end_date}T23:59:59Z"
+        if genre:
+            eb_params["q"] = genre  # Simple query filter
 
-    url_eb = "https://www.eventbriteapi.com/v3/events/search/"
-    try:
-        response_eb = httpx.get(url_eb, params=params_eb, headers=headers_eb, timeout=10)
-        data_eb = response_eb.json()
-        events_eb = data_eb.get("events", [])
-        for event in events_eb:
-            results.append({
-                "source": "Eventbrite",
-                "name": event.get("name", {}).get("text"),
-                "date": event.get("start", {}).get("local"),
-                "venue": event.get("venue", {}).get("name"),
-                "url": event.get("url"),
-                "genre": event.get("category_id"),  # Eventbrite genre/category is different
-            })
-    except Exception as e:
-        results.append({"source": "Eventbrite", "error": str(e)})
+        eb_url = "https://www.eventbriteapi.com/v3/events/search/"
+        try:
+            headers = {"Authorization": f"Bearer {EVENTBRITE_API_KEY}"}
+            eb_response = httpx.get(eb_url, params=eb_params, headers=headers, timeout=10)
+            eb_data = eb_response.json()
+            eb_events = eb_data.get("events", [])
+            for event in eb_events:
+                results.append({
+                    "source": "Eventbrite",
+                    "name": event.get("name", {}).get("text"),
+                    "date": event.get("start", {}).get("local"),
+                    "venue": (event.get("venue", {}) or {}).get("name", "Unknown"),
+                    "url": event.get("url"),
+                    "genre": genre or "",
+                })
+        except Exception as e:
+            results.append({"source": "Eventbrite", "error": str(e)})
 
     return results
-
-@mcp.prompt()
-def generate_event_search_prompt(
-    city: str = None,
-    genre: str = None,
-    start_date: str = None,
-    end_date: str = None
-) -> str:
-    """
-    Generate a natural language prompt for the user or Claude to discover local events.
-    """
-    city_part = f"in {city}" if city else ""
-    genre_part = f"{genre} " if genre else ""
-    date_part = ""
-    if start_date and end_date:
-        date_part = f"between {start_date} and {end_date}"
-    elif start_date:
-        date_part = f"after {start_date}"
-    elif end_date:
-        date_part = f"before {end_date}"
-
-    prompt = f"Find {genre_part}events {city_part} {date_part}. List top results with date, venue, and ticket link."
-    return prompt.strip()
 
 @app.get("/test-events")
 def test_events(
