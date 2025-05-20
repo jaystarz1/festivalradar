@@ -56,6 +56,7 @@ def find_local_events(
                 "venue": event.get("_embedded", {}).get("venues", [{}])[0].get("name"),
                 "url": event.get("url"),
                 "genre": ", ".join([c["name"] for c in event.get("classifications", []) if "name" in c]),
+                "description": event.get("info") or event.get("description") or "",
             })
     except Exception as e:
         results.append({"source": "Ticketmaster", "error": str(e)})
@@ -88,6 +89,7 @@ def find_local_events(
                     "venue": (event.get("venue", {}) or {}).get("name", "Unknown"),
                     "url": event.get("url"),
                     "genre": genre or "",
+                    "description": (event.get("description", {}) or {}).get("text", ""),
                 })
         except Exception as e:
             results.append({"source": "Eventbrite", "error": str(e)})
